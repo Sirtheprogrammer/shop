@@ -3,11 +3,11 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 // Access your API key as an environment variable. 
 // PLEASE NOTE: You MUST set this environment variable on your serverless platform.
 // Example for Vercel/Netlify: EMINI_API_KEY = AIzaSyCmujobikPEO1cicAyCfVXUtrzN_su7jjGg
-const API_KEY = process.env.GEMINI_API_KEY;
+const API_KEY = process.env.REACT_APP_GEMINI_API_KEY;
 
 // Check if API key is available
 if (!API_KEY) {
-  console.error("GEMINI_API_KEY environment variable not set.");
+  console.error("REACT_APP_GEMINI_API_KEY environment variable not set.");
   // In a production app, you might want to return an error response here
 }
 

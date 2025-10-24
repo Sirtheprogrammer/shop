@@ -63,7 +63,7 @@ const Categories = () => {
             <Link
               key={category.id}
               to={`/products?category=${category.id}`}
-              className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-all duration-300"
+              className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow duration-300"
             >
               <div className="p-6">
                 <div className="flex items-center justify-between mb-4">

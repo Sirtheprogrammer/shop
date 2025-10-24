@@ -1,17 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { doc, getDoc, setDoc, collection, updateDoc, getDocs } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
 import ProductReviews from '../components/ProductReviews';
-import {
-  CheckIcon,
-  XMarkIcon,
-  PencilIcon,
-  ShoppingCartIcon,
-  HeartIcon,
-} from '@heroicons/react/24/outline';
+import { ShoppingCartIcon, HeartIcon, PencilIcon, XMarkIcon, CheckIcon } from '@heroicons/react/24/outline';
 
 const ProductDetail = () => {
   const { id } = useParams();
@@ -19,6 +13,8 @@ const ProductDetail = () => {
   const { user } = useAuth();
   const [product, setProduct] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [variants, setVariants] = useState([]);
+  const [selectedVariantIndex, setSelectedVariantIndex] = useState(0);
   const [quantity, setQuantity] = useState(1);
   const [isEditing, setIsEditing] = useState(false);
   const [editedProduct, setEditedProduct] = useState(null);
@@ -26,6 +22,9 @@ const ProductDetail = () => {
   const [imagePreview, setImagePreview] = useState('');
   const [categories, setCategories] = useState([]);
   const [validationErrors, setValidationErrors] = useState({});
+  const [selectedSize, setSelectedSize] = useState('');
+  const [showSizeSelector, setShowSizeSelector] = useState(false);
+  const sizeSelectorRef = useRef(null);
 
   const fetchCategories = useCallback(async () => {
     try {
@@ -50,6 +49,29 @@ const ProductDetail = () => {
         const productData = { id: docSnap.id, ...docSnap.data() };
         setProduct(productData);
         setEditedProduct(productData);
+
+        // If this product belongs to a group, fetch sibling variants
+        if (productData.groupId) {
+          try {
+            const q = collection(db, 'products');
+            const snapshot = await getDocs(q);
+            const siblingVariants = snapshot.docs
+              .map(d => ({ id: d.id, ...d.data() }))
+              .filter(p => p.groupId === productData.groupId)
+              .sort((a, b) => (a.createdAt > b.createdAt ? 1 : -1));
+
+            setVariants(siblingVariants);
+
+            // Set selected index to the current product within variants
+            const idx = siblingVariants.findIndex(v => v.id === productData.id);
+            if (idx >= 0) setSelectedVariantIndex(idx);
+          } catch (err) {
+            console.error('Error fetching sibling variants:', err);
+          }
+        } else {
+          setVariants([productData]);
+          setSelectedVariantIndex(0);
+        }
       } else {
         toast.error('Product not found');
         navigate('/products');
@@ -67,6 +89,36 @@ const ProductDetail = () => {
     fetchCategories();
   }, [fetchProduct, fetchCategories]);
 
+  // Close size selector when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (sizeSelectorRef.current && !sizeSelectorRef.current.contains(event.target)) {
+        setShowSizeSelector(false);
+      }
+    };
+
+    if (showSizeSelector) {
+      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('touchstart', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+    };
+  }, [showSizeSelector]);
+
+  // Size handling functions
+  const requiresSizeSelection = (product) => {
+    return product && product.sizes && product.sizes.length > 0;
+  };
+
+  const getSizeTypeLabel = (product) => {
+    if (!product || !product.sizingType || product.sizingType === 'none') return '';
+    return product.sizingType === 'standard' ? 'Size' :
+           product.sizingType === 'numeric' ? 'EU Size' : 'Size';
+  };
+
   const handleAddToCart = async () => {
     if (!user) {
       toast.error('Please login to add items to cart');
@@ -74,15 +126,26 @@ const ProductDetail = () => {
       return;
     }
 
+    // Check if size selection is required but not selected
+    const currentProduct = variants && variants.length > 0 ? variants[selectedVariantIndex] : product;
+    if (requiresSizeSelection(currentProduct) && !selectedSize) {
+      toast.error(`Please select ${getSizeTypeLabel(currentProduct).toLowerCase()} first`);
+      setShowSizeSelector(true);
+      return;
+    }
+
     try {
-      const cartRef = doc(db, 'carts', user.uid);
-      const cartItemRef = doc(cartRef, 'items', id);
-      
+      const selected = currentProduct;
+      const cartItemRef = doc(db, `carts/${user.uid}/items`, selected.id);
+
       await setDoc(cartItemRef, {
-        productId: id,
-        name: product.name,
-        price: product.price,
-        image: product.image,
+        productId: selected.id,
+        groupId: selected.groupId || null,
+        name: selected.name,
+        price: selected.price,
+        image: selected.image,
+        selectedSize: selectedSize || null,
+        sizingType: selected.sizingType || 'none',
         quantity: quantity,
         addedAt: new Date().toISOString()
       }, { merge: true });
@@ -101,15 +164,26 @@ const ProductDetail = () => {
       return;
     }
 
+    // Check if size selection is required but not selected
+    const currentProduct = variants && variants.length > 0 ? variants[selectedVariantIndex] : product;
+    if (requiresSizeSelection(currentProduct) && !selectedSize) {
+      toast.error(`Please select ${getSizeTypeLabel(currentProduct).toLowerCase()} first`);
+      setShowSizeSelector(true);
+      return;
+    }
+
     try {
-      const wishlistRef = doc(db, 'wishlists', user.uid);
-      const wishlistItemRef = doc(wishlistRef, 'items', id);
-      
+      const selected = currentProduct;
+      const wishlistItemRef = doc(db, `wishlists/${user.uid}/items`, selected.id);
+
       await setDoc(wishlistItemRef, {
-        productId: id,
-        name: product.name,
-        price: product.price,
-        image: product.image,
+        productId: selected.id,
+        groupId: selected.groupId || null,
+        name: selected.name,
+        price: selected.price,
+        image: selected.image,
+        selectedSize: selectedSize || null,
+        sizingType: selected.sizingType || 'none',
         addedAt: new Date().toISOString()
       }, { merge: true });
 
@@ -227,10 +301,7 @@ const ProductDetail = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
-          <p className="text-gray-600 mt-4">Loading product details...</p>
-        </div>
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
       </div>
     );
   }
@@ -240,106 +311,131 @@ const ProductDetail = () => {
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="container mx-auto px-4 py-8">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
         {/* Product Image */}
-        <div className="bg-white dark:bg-surface-dark rounded-lg shadow-sm">
+        <div className="bg-surface dark:bg-surface-dark rounded-lg shadow-md overflow-hidden">
           {isEditing ? (
-            <div className="p-6">
-              <div className="relative">
-                <label 
-                  htmlFor="image-upload" 
-                  className={`block p-4 border-2 border-dashed rounded-lg text-center cursor-pointer
-                    ${validationErrors.image ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'}`}
-                >
-                  <div className="text-gray-600 dark:text-gray-400">
-                    {uploadingImage ? (
-                      <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-primary mx-auto"></div>
-                    ) : (
-                      'Click to change image'
-                    )}
-                  </div>
-                </label>
-                <input
-                  type="file"
-                  id="image-upload"
-                  accept="image/*"
-                  onChange={handleImageUpload}
-                  disabled={uploadingImage}
-                  className="hidden"
-                />
-                {validationErrors.image && (
-                  <p className="mt-2 text-sm text-red-600 dark:text-red-500">
-                    {validationErrors.image}
-                  </p>
-                )}
-              </div>
+            <div className="p-4">
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleImageUpload}
+                className="hidden"
+                id="image-upload"
+                disabled={uploadingImage}
+              />
+              <label
+                htmlFor="image-upload"
+                className={`block w-full p-4 border-2 border-dashed border-gray-300 rounded-lg text-center cursor-pointer hover:border-primary ${
+                  uploadingImage ? 'opacity-50 cursor-not-allowed' : ''
+                } ${validationErrors.image ? 'border-red-500' : ''}`}
+              >
+                {uploadingImage ? 'Uploading...' : 'Click to change image'}
+              </label>
+              {validationErrors.image && (
+                <p className="mt-1 text-sm text-red-600">{validationErrors.image}</p>
+              )}
               {imagePreview && (
                 <div className="mt-4">
                   <img
                     src={imagePreview}
                     alt="Preview"
-                    className="max-h-[400px] object-contain w-full rounded-lg"
+                    className="w-full h-64 object-cover rounded-lg"
                   />
                 </div>
               )}
             </div>
           ) : (
-            <img
-              src={product.image}
-              alt={product.name}
-              className="h-[400px] w-full object-contain rounded-lg"
-            />
+            <div>
+              <img
+                src={(variants && variants.length > 0 ? variants[selectedVariantIndex].image : product.image)}
+                alt={product.name}
+                className="w-full h-96 object-cover"
+              />
+
+              {/* Thumbnails & navigation */}
+              {variants && variants.length > 1 && (
+                <div className="mt-3 flex items-center justify-between">
+                  <button
+                    onClick={() => setSelectedVariantIndex(Math.max(0, selectedVariantIndex - 1))}
+                    className="p-2 rounded-md hover:bg-gray-100"
+                    aria-label="Previous variant"
+                  >
+                    ‹
+                  </button>
+
+                  <div className="flex gap-2 overflow-x-auto flex-1 px-4">
+                    {variants.map((v, idx) => (
+                      <button
+                        key={v.id}
+                        onClick={() => setSelectedVariantIndex(idx)}
+                        className={`w-20 h-20 rounded-md overflow-hidden border ${idx === selectedVariantIndex ? 'border-primary ring-2 ring-primary' : 'border-gray-200'} focus:outline-none`}
+                        aria-label={`Select variant ${idx + 1}`}
+                      >
+                        <img src={v.image} alt={v.name} className="w-full h-full object-cover" />
+                      </button>
+                    ))}
+                  </div>
+
+                  <button
+                    onClick={() => setSelectedVariantIndex(Math.min(variants.length - 1, selectedVariantIndex + 1))}
+                    className="p-2 rounded-md hover:bg-gray-100"
+                    aria-label="Next variant"
+                  >
+                    ›
+                  </button>
+                </div>
+              )}
+            </div>
           )}
         </div>
 
         {/* Product Details */}
-        <div className="bg-white dark:bg-surface-dark rounded-lg shadow-sm p-6">
+        <div className="bg-surface dark:bg-surface-dark rounded-lg shadow-md p-6">
           {isEditing ? (
-            <form className="space-y-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-text-secondary dark:text-text-dark-secondary mb-2">
                   Product Name
                 </label>
                 <input
                   type="text"
                   value={editedProduct.name}
                   onChange={(e) => setEditedProduct({...editedProduct, name: e.target.value})}
-                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary ${
-                    validationErrors.name ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'
+                  className={`w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary ${
+                    validationErrors.name ? 'border-red-500' : ''
                   }`}
                 />
                 {validationErrors.name && (
-                  <p className="mt-2 text-sm text-red-600">{validationErrors.name}</p>
+                  <p className="mt-1 text-sm text-red-600">{validationErrors.name}</p>
                 )}
               </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-text-secondary dark:text-text-dark-secondary mb-2">
                   Price (TZS)
                 </label>
                 <input
                   type="number"
                   value={editedProduct.price}
                   onChange={(e) => setEditedProduct({...editedProduct, price: e.target.value})}
-                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary ${
-                    validationErrors.price ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'
+                  className={`w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary ${
+                    validationErrors.price ? 'border-red-500' : ''
                   }`}
                 />
                 {validationErrors.price && (
-                  <p className="mt-2 text-sm text-red-600">{validationErrors.price}</p>
+                  <p className="mt-1 text-sm text-red-600">{validationErrors.price}</p>
                 )}
               </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-text-secondary dark:text-text-dark-secondary mb-2">
                   Category
                 </label>
                 <select
                   value={editedProduct.category}
                   onChange={(e) => setEditedProduct({...editedProduct, category: e.target.value})}
-                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary ${
-                    validationErrors.category ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'
+                  className={`w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary ${
+                    validationErrors.category ? 'border-red-500' : ''
                   }`}
                 >
                   <option value="">Select a category</option>
@@ -350,82 +446,150 @@ const ProductDetail = () => {
                   ))}
                 </select>
                 {validationErrors.category && (
-                  <p className="mt-2 text-sm text-red-600">{validationErrors.category}</p>
+                  <p className="mt-1 text-sm text-red-600">{validationErrors.category}</p>
                 )}
               </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-text-secondary dark:text-text-dark-secondary mb-2">
                   Description
                 </label>
                 <textarea
-                  rows={4}
                   value={editedProduct.description}
                   onChange={(e) => setEditedProduct({...editedProduct, description: e.target.value})}
-                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary ${
-                    validationErrors.description ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'
+                  rows="4"
+                  className={`w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary ${
+                    validationErrors.description ? 'border-red-500' : ''
                   }`}
                 />
                 {validationErrors.description && (
-                  <p className="mt-2 text-sm text-red-600">{validationErrors.description}</p>
+                  <p className="mt-1 text-sm text-red-600">{validationErrors.description}</p>
                 )}
               </div>
-
-              <div className="grid grid-cols-2 gap-4">
+              <div className="flex space-x-4">
                 <button
-                  type="button"
                   onClick={handleSaveEdit}
-                  className="flex items-center justify-center w-full px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
+                  className="flex-1 bg-primary text-white py-2 px-4 rounded-md hover:bg-primary-dark transition-colors duration-300 flex items-center justify-center"
                 >
                   <CheckIcon className="h-5 w-5 mr-2" />
                   Save Changes
                 </button>
                 <button
-                  type="button"
                   onClick={handleCancelEdit}
-                  className="flex items-center justify-center w-full px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+                  className="flex-1 border border-gray-300 text-gray-700 py-2 px-4 rounded-md hover:bg-gray-50 transition-colors duration-300 flex items-center justify-center"
                 >
                   <XMarkIcon className="h-5 w-5 mr-2" />
                   Cancel
                 </button>
               </div>
-            </form>
+            </>
           ) : (
-            <div>
-              <div className="flex justify-between items-start mb-6">
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{product.name}</h1>
+            <>
+              <div className="flex justify-between items-start mb-4">
+                <h1 className="text-3xl font-bold text-text-primary dark:text-text-dark-primary">{product.name}</h1>
                 {user?.isAdmin && (
                   <button
                     onClick={() => setIsEditing(true)}
-                    className="p-2 text-primary hover:text-primary-dark"
+                    className="text-primary hover:text-primary-dark"
                   >
                     <PencilIcon className="h-5 w-5" />
                   </button>
                 )}
               </div>
 
-              <h2 className="text-2xl font-semibold text-primary mb-4">
-                TZS {parseFloat(product.price).toLocaleString()}
-              </h2>
+              {/* Size requirement indicator */}
+              {(() => {
+                const currentProduct = variants && variants.length > 0 ? variants[selectedVariantIndex] : product;
+                return requiresSizeSelection(currentProduct) && !selectedSize ? (
+                  <div className="mb-4 p-3 bg-warning/10 dark:bg-warning/20 border border-warning/30 dark:border-warning/40 rounded-lg">
+                    <p className="text-sm text-warning dark:text-warning-100 flex items-center">
+                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      Please select {getSizeTypeLabel(currentProduct).toLowerCase()} to continue
+                    </p>
+                  </div>
+                ) : null;
+              })()}
 
-              <p className="text-gray-600 dark:text-gray-400 mb-8">{product.description}</p>
+              <p className="text-2xl font-semibold text-primary mb-4">
+                TZS {parseFloat((variants && variants.length > 0 ? variants[selectedVariantIndex].price : product.price)).toLocaleString()}
+              </p>
+              <p className="text-text-secondary dark:text-text-dark-secondary mb-6">{(variants && variants.length > 0 ? variants[selectedVariantIndex].description || product.description : product.description)}</p>
+
+              {/* Size Selection */}
+              {(() => {
+                const currentProduct = variants && variants.length > 0 ? variants[selectedVariantIndex] : product;
+                return requiresSizeSelection(currentProduct) ? (
+                  <div className="mb-6">
+                    <label className="block text-sm font-medium text-text-secondary dark:text-text-dark-secondary mb-2">
+                      {getSizeTypeLabel(currentProduct)} *
+                    </label>
+
+                    <div className="relative">
+                      <button
+                        onClick={() => setShowSizeSelector(!showSizeSelector)}
+                        className="w-full flex items-center justify-between px-4 py-3 border border-gray-300 rounded-lg bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                      >
+                        <span className={selectedSize ? 'text-text-primary dark:text-text-dark-primary' : 'text-text-tertiary dark:text-text-dark-tertiary'}>
+                          {selectedSize || `Select ${getSizeTypeLabel(currentProduct).toLowerCase()}`}
+                        </span>
+                        <svg className={`w-5 h-5 text-gray-400 transition-transform duration-200 ${showSizeSelector ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </button>
+
+                      {showSizeSelector && (
+                        <div ref={sizeSelectorRef} className="absolute top-full left-0 right-0 mt-1 bg-surface dark:bg-surface-dark border border-border dark:border-border-dark rounded-lg shadow-lg z-10">
+                          <div className={`grid gap-2 p-3 ${
+                            currentProduct.sizingType === 'numeric'
+                              ? 'grid-cols-5 sm:grid-cols-8'
+                              : 'grid-cols-4 sm:grid-cols-6'
+                          }`}>
+                            {currentProduct.sizes.map((size) => (
+                              <button
+                                key={size}
+                                onClick={() => {
+                                  setSelectedSize(size);
+                                  setShowSizeSelector(false);
+                                }}
+                                className={`px-3 py-2 text-sm font-medium rounded border-2 transition-all duration-200 ${
+                                  selectedSize === size
+                                    ? 'bg-primary text-white border-primary shadow-lg'
+                                    : 'bg-surface dark:bg-surface-dark text-text-secondary dark:text-text-dark-secondary border-border dark:border-border-dark hover:border-primary hover:bg-primary/5'
+                                }`}
+                              >
+                                {size}
+                              </button>
+                            ))}
+                          </div>
+                          <div className="p-3 border-t border-border dark:border-border-dark bg-background-secondary dark:bg-background-dark-secondary rounded-b-lg">
+                            <p className="text-xs text-text-tertiary dark:text-text-dark-tertiary text-center">
+                              {currentProduct.sizes.length} sizes available
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : null;
+              })()}
 
               {/* Quantity Selector */}
-              <div className="mb-8">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-text-secondary dark:text-text-dark-secondary mb-2">
                   Quantity
                 </label>
                 <div className="flex items-center space-x-4">
                   <button
                     onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                    className="p-2 rounded-lg border border-gray-300 hover:bg-gray-50"
+                    className="px-3 py-1 border rounded-md hover:bg-gray-100"
                   >
                     -
                   </button>
-                  <span className="text-lg font-medium text-gray-900 dark:text-white">{quantity}</span>
+                  <span className="w-12 text-center">{quantity}</span>
                   <button
                     onClick={() => setQuantity(quantity + 1)}
-                    className="p-2 rounded-lg border border-gray-300 hover:bg-gray-50"
+                    className="px-3 py-1 border rounded-md hover:bg-gray-100"
                   >
                     +
                   </button>
@@ -433,29 +597,61 @@ const ProductDetail = () => {
               </div>
 
               {/* Action Buttons */}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="flex space-x-4">
                 <button
                   onClick={handleAddToCart}
-                  className="flex items-center justify-center px-6 py-3 bg-primary text-white rounded-lg hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
+                  disabled={(() => {
+                    const currentProduct = variants && variants.length > 0 ? variants[selectedVariantIndex] : product;
+                    return requiresSizeSelection(currentProduct) && !selectedSize;
+                  })()}
+                  className={`flex-1 py-3 px-6 rounded-md transition-colors duration-300 flex items-center justify-center ${
+                    (() => {
+                      const currentProduct = variants && variants.length > 0 ? variants[selectedVariantIndex] : product;
+                      return requiresSizeSelection(currentProduct) && !selectedSize
+                        ? 'bg-gray-400 cursor-not-allowed text-white'
+                        : 'bg-primary text-white hover:bg-primary-dark';
+                    })()
+                  }`}
                 >
                   <ShoppingCartIcon className="h-5 w-5 mr-2" />
-                  Add to Cart
+                  {(() => {
+                    const currentProduct = variants && variants.length > 0 ? variants[selectedVariantIndex] : product;
+                    return requiresSizeSelection(currentProduct) && !selectedSize
+                      ? `Select ${getSizeTypeLabel(currentProduct)}`
+                      : 'Add to Cart';
+                  })()}
                 </button>
                 <button
                   onClick={handleAddToWishlist}
-                  className="flex items-center justify-center px-6 py-3 border border-primary text-primary rounded-lg hover:bg-primary hover:text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
+                  disabled={(() => {
+                    const currentProduct = variants && variants.length > 0 ? variants[selectedVariantIndex] : product;
+                    return requiresSizeSelection(currentProduct) && !selectedSize;
+                  })()}
+                  className={`flex-1 py-3 px-6 rounded-md transition-colors duration-300 flex items-center justify-center ${
+                    (() => {
+                      const currentProduct = variants && variants.length > 0 ? variants[selectedVariantIndex] : product;
+                      return requiresSizeSelection(currentProduct) && !selectedSize
+                        ? 'border-gray-400 text-gray-400 cursor-not-allowed'
+                        : 'border-primary text-primary hover:bg-primary hover:text-white';
+                    })()
+                  }`}
                 >
                   <HeartIcon className="h-5 w-5 mr-2" />
-                  Add to Wishlist
+                  {(() => {
+                    const currentProduct = variants && variants.length > 0 ? variants[selectedVariantIndex] : product;
+                    return requiresSizeSelection(currentProduct) && !selectedSize
+                      ? `Select ${getSizeTypeLabel(currentProduct)}`
+                      : 'Add to Wishlist';
+                  })()}
                 </button>
               </div>
-            </div>
+            </>
           )}
         </div>
       </div>
 
       {/* Reviews Section */}
-      <div className="mt-8">
+      <div className="mt-12">
         <ProductReviews productId={id} />
       </div>
     </div>

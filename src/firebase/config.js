@@ -2,8 +2,8 @@ import { initializeApp } from 'firebase/app';
 import { getAnalytics } from 'firebase/analytics';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
-const firebaseConfig = {
 
+// Firebase configuration
   apiKey: "AIzaSyCeEfQ3_XCjN3YOdWUhFBLvyXyfUrDTVtk",
 
   authDomain: "anagroupsupplies.firebaseapp.com",

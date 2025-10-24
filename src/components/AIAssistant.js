@@ -83,17 +83,17 @@ const AIAssistant = () => {
       {/* Floating Button */}
       <button
         onClick={() => setIsOpen(true)}
-        className="fixed bottom-6 right-6 bg-primary text-white p-4 rounded-full shadow-lg hover:bg-secondary transition-all duration-300 z-50 flex items-center justify-center group"
+        className="fixed bottom-20 right-4 md:bottom-6 md:right-6 bg-primary text-white p-3 md:p-4 rounded-full shadow-lg hover:bg-secondary transition-all duration-300 z-50 flex items-center justify-center group"
       >
-        <ChatBubbleLeftRightIcon className="h-6 w-6" />
-        <span className="absolute right-16 bg-white text-primary px-3 py-1 rounded-full text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-300 whitespace-nowrap">
+        <ChatBubbleLeftRightIcon className="h-5 w-5 md:h-6 md:w-6" />
+        <span className="hidden md:block absolute right-16 bg-white text-primary px-3 py-1 rounded-full text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-300 whitespace-nowrap">
          AnA Group Supplies Assistant
         </span>
       </button>
 
       {/* Chat Popup */}
       {isOpen && (
-        <div className="fixed bottom-24 right-6 w-96 bg-white dark:bg-surface-dark rounded-lg shadow-xl z-50 overflow-hidden border border-gray-200 dark:border-gray-700">
+        <div className="fixed bottom-28 md:bottom-24 right-2 md:right-6 w-[calc(100vw-1rem)] md:w-96 max-w-[96vw] md:max-w-none bg-white dark:bg-surface-dark rounded-lg shadow-xl z-50 overflow-hidden border border-gray-200 dark:border-gray-700">
           {/* Header */}
           <div className="bg-primary text-white p-4 flex items-center justify-between">
             <div className="flex items-center space-x-2">

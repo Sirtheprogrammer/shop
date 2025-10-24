@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { addProduct } from '../firebase/index';
+import { addProduct, addProductGroup } from '../firebase/index';
 import { uploadImage } from '../services/imageUpload';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../firebase/config';
@@ -20,8 +20,94 @@ const AddProduct = () => {
     description: '',
     price: '',
     category: '',
-    image: null
+    image: null,
+    sizingType: 'none', // 'none', 'standard', 'numeric', 'custom'
+    sizes: [], // Available sizes for the product
+    customSizes: '' // For custom size input
   });
+  // Group mode: when true we collect shared fields once and allow multiple variants
+  const [groupMode, setGroupMode] = useState(false);
+  const [variants, setVariants] = useState([]);
+  // variant image preview handled inline per-variant state
+
+  // Size management functions
+  const standardSizes = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL'];
+  const numericSizes = Array.from({length: 16}, (_, i) => (36 + i).toString()); // 36-51
+
+  const getAvailableSizes = () => {
+    switch (formData.sizingType) {
+      case 'standard':
+        return standardSizes;
+      case 'numeric':
+        return numericSizes;
+      case 'custom':
+        return formData.customSizes.split(',').map(s => s.trim()).filter(s => s.length > 0);
+      default:
+        return [];
+    }
+  };
+
+  const handleSizeToggle = (size) => {
+    if (formData.sizingType === 'none') return;
+
+    setFormData(prev => ({
+      ...prev,
+      sizes: prev.sizes.includes(size)
+        ? prev.sizes.filter(s => s !== size)
+        : [...prev.sizes, size]
+    }));
+  };
+
+  const handleCustomSizesChange = (value) => {
+    setFormData(prev => ({
+      ...prev,
+      customSizes: value,
+      sizes: value.split(',').map(s => s.trim()).filter(s => s.length > 0)
+    }));
+  };
+
+  const handleAddVariant = () => {
+    setVariants(prev => ([...prev, { id: `v-${Date.now()}`, price: '', sku: '', attributes: { color: '' }, image: null }]));
+  };
+
+  const handleVariantChange = (index, field, value) => {
+    setVariants(prev => {
+      const copy = [...prev];
+      copy[index] = { ...copy[index], [field]: value };
+      return copy;
+    });
+  };
+
+  const handleVariantAttributeChange = (index, attr, value) => {
+    setVariants(prev => {
+      const copy = [...prev];
+      copy[index] = { ...copy[index], attributes: { ...copy[index].attributes, [attr]: value } };
+      return copy;
+    });
+  };
+
+  const handleVariantImageUpload = async (index, file) => {
+    if (!file) return;
+    try {
+      // show small progress indicator
+      setLoading(true);
+      const imageUrl = await uploadImage(file);
+      setVariants(prev => {
+        const copy = [...prev];
+        copy[index] = { ...copy[index], image: imageUrl };
+        return copy;
+      });
+    } catch (err) {
+      console.error('Error uploading variant image', err);
+      toast.error('Failed to upload variant image');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRemoveVariant = (index) => {
+    setVariants(prev => prev.filter((_, i) => i !== index));
+  };
 
   // Fetch categories on component mount
   useEffect(() => {
@@ -116,8 +202,31 @@ const AddProduct = () => {
       errors.category = 'Please select a category';
     }
 
-    if (!formData.image) {
+    // Validate sizing
+    if (formData.sizingType !== 'none' && formData.sizes.length === 0) {
+      errors.sizing = 'Please select at least one size or choose "No sizing required"';
+    }
+
+    // If not in group mode, main product image is required. If in group mode,
+    // at least one variant with an image must exist (we validate below).
+    if (!groupMode && !formData.image) {
       errors.image = 'Product image is required';
+    }
+
+    if (groupMode) {
+      if (!variants || variants.length === 0) {
+        errors.variants = 'Please add at least one variant';
+      } else {
+        // validate each variant has price and image
+        variants.forEach((v, idx) => {
+          if (!v.price || parseFloat(v.price) <= 0) {
+            errors[`variant_price_${idx}`] = 'Variant price must be greater than 0';
+          }
+          if (!v.image) {
+            errors[`variant_image_${idx}`] = 'Variant image is required';
+          }
+        });
+      }
     }
 
     setValidationErrors(errors);
@@ -148,19 +257,49 @@ const AddProduct = () => {
       const imageUrl = await uploadImage(formData.image);
       setUploadProgress(60);
 
-      // Add product to Firestore
-      const productData = {
-        name: formData.name.trim(),
-        description: formData.description.trim(),
-        price: parseFloat(formData.price),
-        category: formData.category,
-        image: imageUrl,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
+      // If groupMode is enabled, create a group and upload variants
+      if (groupMode) {
+        // Build group data (shared fields)
+        const groupData = {
+          name: formData.name.trim(),
+          description: formData.description.trim(),
+          category: formData.category,
+          sizingType: formData.sizingType,
+          sizes: formData.sizes,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
 
-      setUploadProgress(80);
-      await addProduct(productData);
+        // Ensure we have at least one variant
+        if (variants.length === 0) {
+          // If no explicit variants, treat the current image/form as a single variant
+          variants.push({
+            price: parseFloat(formData.price),
+            image: imageUrl,
+            sku: formData.sku || null,
+            attributes: formData.attributes || {}
+          });
+        }
+
+        setUploadProgress(80);
+        await addProductGroup(groupData, variants);
+      } else {
+        // Add product to Firestore
+        const productData = {
+          name: formData.name.trim(),
+          description: formData.description.trim(),
+          price: parseFloat(formData.price),
+          category: formData.category,
+          sizingType: formData.sizingType,
+          sizes: formData.sizes,
+          image: imageUrl,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+
+        setUploadProgress(80);
+        await addProduct(productData);
+      }
       setUploadProgress(100);
 
       toast.success('Product added successfully!', {
@@ -217,6 +356,58 @@ const AddProduct = () => {
       )}
 
       <form onSubmit={handleSubmit} className="space-y-4 md:space-y-6">
+        {/* Group Mode Toggle */}
+        <div className="flex items-center justify-between">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Enable Group Mode</label>
+            <p className="text-xs text-gray-500">Create a product group and upload multiple variants (colors, sizes) sharing the same base product data.</p>
+          </div>
+          <div>
+            <label className="inline-flex items-center">
+              <input type="checkbox" checked={groupMode} onChange={(e) => setGroupMode(e.target.checked)} className="form-checkbox h-5 w-5 text-primary" />
+            </label>
+          </div>
+        </div>
+
+        {/* Variant Editor (shown when groupMode enabled) */}
+        {groupMode && (
+          <div className="bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 space-y-3">
+            <div className="flex justify-between items-center">
+              <h3 className="text-sm font-semibold">Variants</h3>
+              <button type="button" onClick={handleAddVariant} className="text-sm bg-primary text-white px-3 py-1 rounded-md">Add Variant</button>
+            </div>
+
+            {variants.length === 0 && (
+              <p className="text-xs text-gray-500">No variants added yet — click "Add Variant" to create one.</p>
+            )}
+
+            {variants.map((v, idx) => (
+              <div key={v.id} className="grid grid-cols-1 md:grid-cols-12 gap-2 items-center border rounded-md p-2 bg-white dark:bg-surface-dark">
+                <div className="md:col-span-3 flex items-center">
+                  <div className="w-20 h-20 bg-gray-100 rounded-md overflow-hidden">
+                    {v.image ? (
+                      <img src={v.image} alt={`variant-${idx}`} className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="text-xs text-gray-500 p-2">No image</div>
+                    )}
+                  </div>
+                </div>
+                <div className="md:col-span-7 grid grid-cols-1 gap-2">
+                  <input type="text" placeholder="SKU (optional)" value={v.sku} onChange={(e) => handleVariantChange(idx, 'sku', e.target.value)} className="block w-full rounded-md border-gray-300 p-2" />
+                  <input type="number" placeholder="Price" value={v.price} onChange={(e) => handleVariantChange(idx, 'price', e.target.value)} className="block w-full rounded-md border-gray-300 p-2" />
+                  <input type="text" placeholder="Color" value={v.attributes.color} onChange={(e) => handleVariantAttributeChange(idx, 'color', e.target.value)} className="block w-full rounded-md border-gray-300 p-2" />
+                </div>
+                <div className="md:col-span-2 flex flex-col items-end gap-2">
+                  <label className="block">
+                    <input type="file" accept="image/*" onChange={(e) => handleVariantImageUpload(idx, e.target.files[0])} className="hidden" id={`variant-image-${idx}`} />
+                    <label htmlFor={`variant-image-${idx}`} className="text-sm bg-gray-200 px-2 py-1 rounded-md cursor-pointer">Upload Image</label>
+                  </label>
+                  <button type="button" onClick={() => handleRemoveVariant(idx)} className="text-sm text-red-600">Remove</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Product Name *</label>
           <input
@@ -305,6 +496,77 @@ const AddProduct = () => {
             <p className="mt-2 text-sm text-red-600 flex items-center">
               <ExclamationTriangleIcon className="h-4 w-4 mr-1 flex-shrink-0" />
               {validationErrors.category}
+            </p>
+          )}
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Product Sizing</label>
+          <select
+            name="sizingType"
+            value={formData.sizingType}
+            onChange={handleChange}
+            disabled={isSubmitting}
+            className="block w-full border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary disabled:bg-gray-100 disabled:cursor-not-allowed transition-colors mb-3"
+          >
+            <option value="none">No sizing required</option>
+            <option value="standard">Standard sizes (XS, S, M, L, XL, etc.)</option>
+            <option value="numeric">Numeric sizes (36, 37, 38, etc.)</option>
+            <option value="custom">Custom sizes (enter your own)</option>
+          </select>
+
+          {(formData.sizingType === 'standard' || formData.sizingType === 'numeric') && (
+            <>
+              <p className="text-xs text-gray-500 mb-3">Select all sizes that will be available for this product</p>
+              <div className={`grid gap-2 ${
+                formData.sizingType === 'standard'
+                  ? 'grid-cols-4 sm:grid-cols-7'
+                  : 'grid-cols-5 sm:grid-cols-8'
+              }`}>
+                {getAvailableSizes().map((size) => (
+                  <button
+                    key={size}
+                    type="button"
+                    onClick={() => handleSizeToggle(size)}
+                    disabled={isSubmitting}
+                    className={`px-3 py-2 text-sm font-medium rounded-lg border-2 transition-all duration-200 touch-manipulation ${
+                      formData.sizes.includes(size)
+                        ? 'bg-primary text-white border-primary shadow-lg'
+                        : 'bg-white dark:bg-surface-dark text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:border-primary hover:bg-primary/5'
+                    }`}
+                  >
+                    {size}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+
+          {formData.sizingType === 'custom' && (
+            <>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Custom Sizes</label>
+              <p className="text-xs text-gray-500 mb-3">Enter sizes separated by commas (e.g., "Small, Medium, Large, 36, 38")</p>
+              <input
+                type="text"
+                value={formData.customSizes}
+                onChange={(e) => handleCustomSizesChange(e.target.value)}
+                disabled={isSubmitting}
+                placeholder="Small, Medium, Large, 36, 38"
+                className="block w-full border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary disabled:bg-gray-100 disabled:cursor-not-allowed transition-colors"
+              />
+            </>
+          )}
+
+          {formData.sizes.length > 0 && (
+            <p className="text-xs text-gray-500 mt-2">
+              Selected sizes: {formData.sizes.join(', ')}
+            </p>
+          )}
+
+          {validationErrors.sizing && (
+            <p className="mt-2 text-sm text-red-600 flex items-center">
+              <ExclamationTriangleIcon className="h-4 w-4 mr-1 flex-shrink-0" />
+              {validationErrors.sizing}
             </p>
           )}
         </div>

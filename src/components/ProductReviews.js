@@ -4,8 +4,8 @@ import { db } from '../firebase/config';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
-import { Card, Button, Form, Row, Col, Spinner } from 'react-bootstrap';
-import { StarFill, Star } from 'react-bootstrap-icons';
+import { StarIcon } from '@heroicons/react/24/solid';
+import { StarIcon as StarOutlineIcon } from '@heroicons/react/24/outline';
 
 const ProductReviews = ({ productId }) => {
   const { user } = useAuth();
@@ -18,12 +18,6 @@ const ProductReviews = ({ productId }) => {
   const [loading, setLoading] = useState(true);
   const [hoveredRating, setHoveredRating] = useState(0);
   const [error, setError] = useState(null);
-
-  useEffect(() => {
-    if (productId) {
-      fetchReviews();
-    }
-  }, [productId, fetchReviews]);
 
   const fetchReviews = useCallback(async () => {
     try {
@@ -55,7 +49,13 @@ const ProductReviews = ({ productId }) => {
     }
   }, [productId]);
 
-  const handleSubmitReview = useCallback(async (e) => {
+  useEffect(() => {
+    if (productId) {
+      fetchReviews();
+    }
+  }, [productId, fetchReviews]);
+
+  const handleSubmitReview = async (e) => {
     e.preventDefault();
     
     if (!user) {
@@ -94,7 +94,7 @@ const ProductReviews = ({ productId }) => {
       console.error('Error submitting review:', error);
       toast.error('Failed to submit review. Please try again.');
     }
-  }, [user, navigate, newReview, productId, fetchReviews]);
+  };
 
   const calculateAverageRating = () => {
     if (reviews.length === 0) return 0;
@@ -104,146 +104,130 @@ const ProductReviews = ({ productId }) => {
 
   if (loading) {
     return (
-      <div className="text-center py-4">
-        <Spinner animation="border" variant="primary" />
+      <div className="flex items-center justify-center py-8">
+        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary"></div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="text-center py-4">
-        <p className="text-danger mb-3">{error}</p>
-        <Button 
-          variant="primary"
+      <div className="text-center py-8">
+        <p className="text-red-600 mb-4">{error}</p>
+        <button
           onClick={fetchReviews}
+          className="text-primary hover:text-primary-dark"
         >
           Try Again
-        </Button>
+        </button>
       </div>
     );
   }
 
   return (
-    <Card className="border-0 shadow-sm">
-      <Card.Body>
-        <h2 className="h4 mb-4">Customer Reviews</h2>
+    <div className="mt-8">
+      <div className="flex items-center mb-6">
+        <div className="flex items-center">
+          {[1, 2, 3, 4, 5].map((star) => (
+            <StarIcon
+              key={star}
+              className={`h-6 w-6 ${
+                star <= calculateAverageRating()
+                  ? 'text-yellow-400'
+                  : 'text-gray-300'
+              }`}
+            />
+          ))}
+        </div>
+        <span className="ml-2 text-gray-600">
+          {calculateAverageRating()} ({reviews.length} reviews)
+        </span>
+      </div>
 
-        {/* Overall Rating */}
-        <div className="d-flex align-items-center gap-2 mb-4">
-          <h3 className="h5 mb-0">{calculateAverageRating()}</h3>
-          <div className="text-warning">
-            {[...Array(5)].map((_, i) => (
-              <span key={i}>
-                {i < Math.round(calculateAverageRating()) ? (
-                  <StarFill size={20} />
+      {/* Review Form */}
+      <form onSubmit={handleSubmitReview} className="mb-8">
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Your Rating
+          </label>
+          <div className="flex items-center">
+            {[1, 2, 3, 4, 5].map((star) => (
+              <button
+                key={star}
+                type="button"
+                onClick={() => setNewReview({ ...newReview, rating: star })}
+                onMouseEnter={() => setHoveredRating(star)}
+                onMouseLeave={() => setHoveredRating(0)}
+                className="focus:outline-none"
+              >
+                {star <= (hoveredRating || newReview.rating) ? (
+                  <StarIcon className="h-8 w-8 text-yellow-400" />
                 ) : (
-                  <Star size={20} />
+                  <StarOutlineIcon className="h-8 w-8 text-gray-300" />
                 )}
-              </span>
+              </button>
             ))}
           </div>
-          <span className="text-muted">({reviews.length} reviews)</span>
         </div>
 
-        {/* Review Form */}
-        {user && (
-          <Card className="bg-light border-0 mb-4">
-            <Card.Body>
-              <h3 className="h5 mb-3">Write a Review</h3>
-              <Form onSubmit={handleSubmitReview}>
-                <Form.Group className="mb-3">
-                  <div className="d-flex align-items-center gap-2 mb-2">
-                    <Form.Label className="mb-0">Rating:</Form.Label>
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Your Review
+          </label>
+          <textarea
+            value={newReview.comment}
+            onChange={(e) => setNewReview({ ...newReview, comment: e.target.value })}
+            className="w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary"
+            rows="4"
+            placeholder="Write your review here..."
+            required
+          />
+        </div>
+
+        <button
+          type="submit"
+          className="bg-primary text-white px-6 py-2 rounded-md hover:bg-primary-dark transition-colors duration-300"
+        >
+          Submit Review
+        </button>
+      </form>
+
+      {/* Reviews List */}
+      <div className="space-y-6">
+        {reviews.length === 0 ? (
+          <p className="text-center text-gray-600 py-4">No reviews yet. Be the first to review this product!</p>
+        ) : (
+          reviews.map((review) => (
+            <div key={review.id} className="bg-white rounded-lg shadow-sm p-6">
+              <div className="flex items-center mb-4">
+                <img
+                  src={review.userPhoto || 'https://via.placeholder.com/40'}
+                  alt={review.userName}
+                  className="w-10 h-10 rounded-full mr-4"
+                />
+                <div>
+                  <h4 className="font-medium">{review.userName}</h4>
+                  <div className="flex items-center">
                     {[1, 2, 3, 4, 5].map((star) => (
-                      <Button
+                      <StarIcon
                         key={star}
-                        variant="link"
-                        className="p-0 text-warning"
-                        onClick={() => setNewReview({ ...newReview, rating: star })}
-                        onMouseEnter={() => setHoveredRating(star)}
-                        onMouseLeave={() => setHoveredRating(0)}
-                      >
-                        {star <= (hoveredRating || newReview.rating) ? (
-                          <StarFill size={24} />
-                        ) : (
-                          <Star size={24} />
-                        )}
-                      </Button>
+                        className={`h-4 w-4 ${
+                          star <= review.rating ? 'text-yellow-400' : 'text-gray-300'
+                        }`}
+                      />
                     ))}
                   </div>
-                </Form.Group>
-                
-                <Form.Group className="mb-3">
-                  <Form.Control
-                    as="textarea"
-                    rows={3}
-                    placeholder="Write your review here..."
-                    value={newReview.comment}
-                    onChange={(e) => setNewReview({ ...newReview, comment: e.target.value })}
-                  />
-                </Form.Group>
-
-                <Button type="submit" variant="primary">
-                  Submit Review
-                </Button>
-              </Form>
-            </Card.Body>
-          </Card>
-        )}
-
-        {/* Reviews List */}
-        <Row className="g-3">
-          {reviews.length === 0 ? (
-            <Col xs={12}>
-              <div className="text-center py-4">
-                <p className="text-muted mb-0">
-                  No reviews yet. Be the first to review this product!
-                </p>
+                </div>
+                <span className="ml-auto text-sm text-gray-500">
+                  {new Date(review.createdAt).toLocaleDateString()}
+                </span>
               </div>
-            </Col>
-          ) : (
-            reviews.map((review) => (
-              <Col xs={12} key={review.id}>
-                <Card className="h-100">
-                  <Card.Body>
-                    <div className="d-flex justify-content-between mb-2">
-                      <div className="text-warning">
-                        {[...Array(5)].map((_, i) => (
-                          <span key={i}>
-                            {i < review.rating ? (
-                              <StarFill size={16} />
-                            ) : (
-                              <Star size={16} />
-                            )}
-                          </span>
-                        ))}
-                      </div>
-                      <small className="text-muted">
-                        {new Date(review.createdAt).toLocaleDateString()}
-                      </small>
-                    </div>
-                    <div className="d-flex gap-3 mb-2">
-                      <img
-                        src={review.userPhoto || 'https://via.placeholder.com/40'}
-                        alt={review.userName}
-                        className="rounded-circle"
-                        width="40"
-                        height="40"
-                      />
-                      <div>
-                        <h6 className="mb-1">{review.userName}</h6>
-                        <p className="mb-0 text-muted">{review.comment}</p>
-                      </div>
-                    </div>
-                  </Card.Body>
-                </Card>
-              </Col>
-            ))
-          )}
-        </Row>
-      </Card.Body>
-    </Card>
+              <p className="text-gray-600">{review.comment}</p>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
   );
 };
 

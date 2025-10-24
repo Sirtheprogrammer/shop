@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { getProductById, updateProduct } from '../firebase/index';
 import { uploadImage } from '../services/imageUpload';
@@ -17,19 +17,28 @@ const EditProduct = () => {
     image: null
   });
   const [currentImageUrl, setCurrentImageUrl] = useState('');
+  const [originalGroupId, setOriginalGroupId] = useState(null);
 
   useEffect(() => {
     const fetchProduct = async () => {
       try {
         const product = await getProductById(id);
+        if (!product) {
+          toast.error('Product not found');
+          navigate('/admin/products');
+          return;
+        }
+
         setFormData({
-          name: product.name,
-          description: product.description,
-          price: product.price.toString(),
-          category: product.category,
+          name: product.name || '',
+          description: product.description || '',
+          price: (product.price !== undefined && product.price !== null) ? product.price.toString() : '',
+          category: product.category || '',
           image: null
         });
-        setCurrentImageUrl(product.image);
+        setCurrentImageUrl(product.image || '');
+        // remember if this product belongs to a group so we don't remove that association
+        if (product.groupId) setOriginalGroupId(product.groupId);
       } catch (error) {
         console.error('Error fetching product:', error);
         toast.error('Failed to fetch product details');
@@ -40,15 +49,15 @@ const EditProduct = () => {
     fetchProduct();
   }, [id, navigate]);
 
-  const handleChange = useCallback((e) => {
+  const handleChange = (e) => {
     const { name, value, files } = e.target;
     setFormData(prev => ({
       ...prev,
       [name]: files ? files[0] : value
     }));
-  }, []);
+  };
 
-  const handleSubmit = useCallback(async (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
 
@@ -69,6 +78,11 @@ const EditProduct = () => {
         updatedAt: new Date().toISOString()
       };
 
+      // Preserve groupId on update for grouped variants
+      if (originalGroupId) {
+        productData.groupId = originalGroupId;
+      }
+
       await updateProduct(id, productData);
       toast.success('Product updated successfully!');
       navigate('/admin/products');
@@ -78,7 +92,7 @@ const EditProduct = () => {
     } finally {
       setLoading(false);
     }
-  }, [currentImageUrl, formData, id, navigate]);
+  };
 
   return (
     <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-8">

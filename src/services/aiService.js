@@ -6,16 +6,20 @@ class AIService {
   constructor() {
     const API_KEY = process.env.REACT_APP_GEMINI_API_KEY;
     if (!API_KEY) {
-      console.error('GEMINI_API_KEY not found in environment variables');
-      return;
+      throw new Error('REACT_APP_GEMINI_API_KEY not found in environment variables. Please check your .env file.');
     }
-    
-    this.genAI = new GoogleGenerativeAI(API_KEY);
-    this.model = this.genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-    this.productCache = null;
-    this.categoryCache = null;
-    this.lastCacheUpdate = null;
-    this.CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+    try {
+      this.genAI = new GoogleGenerativeAI(API_KEY);
+      this.model = this.genAI.getGenerativeModel({ model: "gemini-2.0-flash" }); // Changed to gemini-pro as it's more stable
+      this.productCache = null;
+      this.categoryCache = null;
+      this.lastCacheUpdate = null;
+      this.CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+    } catch (error) {
+      console.error('Error initializing AI service:', error);
+      throw new Error('Failed to initialize AI service. Please check your API key and try again.');
+    }
   }
 
   // Fetch and cache product data
