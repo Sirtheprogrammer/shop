@@ -1,4 +1,4 @@
-import { collection, addDoc, getDocs, query, where, orderBy, limit, Timestamp, getCountFromServer } from 'firebase/firestore';
+import { collection, addDoc, getDocs, query, where, orderBy, Timestamp } from 'firebase/firestore';
 import { db } from '../firebase/config';
 
 class AnalyticsService {
@@ -172,27 +172,11 @@ class AnalyticsService {
           startDate.setDate(endDate.getDate() - 30);
       }
 
-      // Use aggregation to get the total count (cheap) and then fetch a bounded sample for charts
-      let totalEvents = 0;
-      try {
-        const countSnap = await getCountFromServer(query(
-          collection(db, 'analytics'),
-          where('timestamp', '>=', Timestamp.fromDate(startDate)),
-          where('timestamp', '<=', Timestamp.fromDate(endDate))
-        ));
-        totalEvents = countSnap.data().count || 0;
-      } catch (err) {
-        console.warn('getCountFromServer failed, will fall back to limited query', err);
-      }
-
-      // Fetch only a sample of events (limit to avoid large downloads). This keeps charts representative without full data transfer.
-      const SAMPLE_LIMIT = 500;
       const analyticsQuery = query(
         collection(db, 'analytics'),
         where('timestamp', '>=', Timestamp.fromDate(startDate)),
         where('timestamp', '<=', Timestamp.fromDate(endDate)),
-        orderBy('timestamp', 'desc'),
-        limit(SAMPLE_LIMIT)
+        orderBy('timestamp', 'desc')
       );
 
       const snapshot = await getDocs(analyticsQuery);
@@ -202,11 +186,7 @@ class AnalyticsService {
         timestamp: doc.data().timestamp.toDate()
       }));
 
-      const processed = this.processAnalyticsData(events);
-      // attach totalEvents (accurate if aggregation succeeded, otherwise approximate equals sampled length)
-      processed.totalEvents = totalEvents || events.length;
-      processed.sampled = events.length < (totalEvents || Infinity);
-      return processed;
+      return this.processAnalyticsData(events);
     } catch (error) {
       console.error('Error fetching analytics data:', error);
       return this.getEmptyAnalyticsData();
@@ -280,9 +260,7 @@ class AnalyticsService {
           break;
 
         default:
-          // Handle any unrecognized event types
-          console.warn('Unhandled event type:', event.type);
-          break;
+          console.warn('Unknown event type:', event.type);
       }
 
       // Track user activity
@@ -328,23 +306,22 @@ class AnalyticsService {
       const lastHour = new Date();
       lastHour.setHours(lastHour.getHours() - 1);
 
-      // Cap the real-time scan to avoid huge reads when the analytics collection is large
-      const RECENT_LIMIT = 1000;
       const recentQuery = query(
         collection(db, 'analytics'),
         where('timestamp', '>=', Timestamp.fromDate(lastHour)),
-        orderBy('timestamp', 'desc'),
-        limit(RECENT_LIMIT)
+        orderBy('timestamp', 'desc')
       );
 
       const snapshot = await getDocs(recentQuery);
-      const recentEvents = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const recentEvents = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
 
       return {
         activeUsers: new Set(recentEvents.map(e => e.userId).filter(Boolean)).size,
         recentEvents: recentEvents.length,
-        lastUpdated: new Date(),
-        truncated: recentEvents.length >= RECENT_LIMIT
+        lastUpdated: new Date()
       };
     } catch (error) {
       console.error('Error fetching real-time metrics:', error);

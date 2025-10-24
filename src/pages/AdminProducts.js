@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { getProducts, deleteProduct } from '../firebase/index';
 import { PencilIcon, TrashIcon, PlusIcon } from '@heroicons/react/24/outline';
@@ -23,16 +23,16 @@ const AdminProducts = () => {
     fetchProducts();
   }, []);
 
-  const handleDelete = async (id) => {
+  const handleDelete = useCallback(async (id) => {
     if (window.confirm('Are you sure you want to delete this product?')) {
       try {
         await deleteProduct(id);
-        setProducts(products.filter(product => product.id !== id));
+        setProducts(prevProducts => prevProducts.filter(product => product.id !== id));
       } catch (error) {
         setError(error.message);
       }
     }
-  };
+  }, []);
 
   if (loading) return <div>Loading...</div>;
   if (error) return <div>Error: {error}</div>;

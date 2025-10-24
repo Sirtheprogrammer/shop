@@ -3,7 +3,16 @@ import { collection, getDocs, query, where, limit } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { Link, useSearchParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
-import { ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
+import { motion } from 'framer-motion';
+import {
+  FunnelIcon,
+  Squares2X2Icon,
+  ListBulletIcon,
+  MagnifyingGlassIcon,
+  AdjustmentsHorizontalIcon
+} from '@heroicons/react/24/outline';
+
+import ProductCard from '../components/ProductCard';
 
 const Products = () => {
   const [products, setProducts] = useState([]);
@@ -13,6 +22,10 @@ const Products = () => {
   const [categories, setCategories] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'list'
+  const [sortBy, setSortBy] = useState('newest');
+  const [priceRange, setPriceRange] = useState([0, 1000000]);
+  const [showFilters, setShowFilters] = useState(false);
   const itemsPerPage = isMobile ? 6 : 12; // 6 items for mobile, 12 for desktop
 
   // Add window resize listener
@@ -70,43 +83,12 @@ const Products = () => {
           ...data
         };
       }).filter(product => product.name && product.price); // Only include products with required fields
-
+      
       // Sort products by creation date
       productsList.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-
-      // Collapse grouped products into a single representative per groupId
-      const seenGroups = new Set();
-      const grouped = [];
-      for (const p of productsList) {
-        if (p.groupId) {
-          if (seenGroups.has(p.groupId)) continue;
-
-          const variants = productsList.filter(x => x.groupId === p.groupId);
-          const rep = variants[0];
-          const prices = variants.map(v => parseFloat(v.price || 0)).filter(n => !Number.isNaN(n));
-          const minPrice = prices.length > 0 ? Math.min(...prices) : parseFloat(rep.price || 0);
-
-          grouped.push({
-            id: rep.id,
-            groupId: p.groupId,
-            name: rep.name,
-            image: rep.image,
-            category: rep.category,
-            description: rep.description,
-            price: minPrice,
-            groupMinPrice: minPrice,
-            variantCount: variants.length,
-            createdAt: rep.createdAt
-          });
-
-          seenGroups.add(p.groupId);
-        } else {
-          grouped.push(p);
-        }
-      }
-
-      console.log(`Found ${grouped.length} products (grouped view)`);
-      setProducts(grouped);
+      
+      console.log(`Found ${productsList.length} products`);
+      setProducts(productsList);
       setCurrentPage(1); // Reset to first page when category changes
     } catch (error) {
       console.error('Error fetching products:', error);
@@ -118,11 +100,8 @@ const Products = () => {
 
   useEffect(() => {
     fetchProducts();
-  }, [fetchProducts]);
-
-  useEffect(() => {
     fetchCategories();
-  }, [fetchCategories]);
+  }, [fetchProducts, fetchCategories]);
 
   const getCategoryName = (categoryId) => {
     const category = categories.find(cat => cat.id === categoryId);
@@ -171,180 +150,319 @@ const Products = () => {
 
     testProductAccess();
   }, []);
-
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen">
-        <div className="relative w-16 h-16">
-          <div className="absolute top-0 left-0 w-full h-full">
-            <div className="w-16 h-16 rounded-full border-4 border-primary border-opacity-20"></div>
+      <div className="min-h-screen flex items-center justify-center">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.8 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="text-center space-y-4"
+        >
+          <div className="relative">
+            <div className="w-16 h-16 border-4 border-primary/30 border-t-primary rounded-full animate-spin mx-auto"></div>
+            <div className="absolute inset-0 w-16 h-16 border-4 border-transparent border-t-secondary rounded-full animate-spin mx-auto" style={{ animationDelay: '0.3s', animationDirection: 'reverse' }}></div>
           </div>
-          <div className="absolute top-0 left-0 w-full h-full animate-spin">
-            <div className="w-16 h-16 rounded-full border-4 border-transparent border-t-primary"></div>
-          </div>
-        </div>
-        <p className="mt-4 text-gray-600 dark:text-gray-400 animate-pulse">Loading products...</p>
+          <motion.p
+            animate={{ opacity: [0.5, 1, 0.5] }}
+            transition={{ duration: 2, repeat: Infinity }}
+            className="text-slate-600 dark:text-slate-400 font-medium"
+          >
+            Loading products...
+          </motion.p>
+        </motion.div>
       </div>
     );
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-6 animate-fadeIn">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 md:mb-8">
-        <div className="flex-1 w-full md:w-auto">
-          <h1 className="text-2xl md:text-3xl lg:text-4xl font-bold text-text dark:text-text-dark mb-2">
+    <div className="space-y-6">
+      {/* Header */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="flex flex-col md:flex-row items-start md:items-center justify-between"
+      >
+        <div className="space-y-2">
+          <h1 className="heading-secondary">
             {categoryId ? `${getCategoryName(categoryId)} Products` : 'All Products'}
           </h1>
-          <p className="text-gray-600 dark:text-gray-400 text-sm md:text-base">
+          <p className="text-body">
             Discover our curated collection of high-quality products
           </p>
         </div>
-        <div className="flex items-center space-x-2 md:space-x-4 w-full md:w-auto justify-end mt-4 md:mt-0">
-          <Link
-            to="/products"
-            className={`inline-flex items-center px-4 py-2 rounded-lg bg-surface dark:bg-surface-dark border-2 border-primary text-primary hover:bg-primary hover:text-white transition-all duration-300 text-sm ${!categoryId ? 'hidden' : ''}`}
-          >
-            <span className="mr-2">View All Products</span>
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
-            </svg>
-          </Link>
-        </div>
-      </div>
+        {categoryId && (
+          <div className="mt-4 md:mt-0">
+            <Link to="/products">
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className="btn btn-outline"
+              >
+                View All Products
+              </motion.button>
+            </Link>
+          </div>
+        )}
+      </motion.div>
 
-      {products.length === 0 ? (
-        <div className="text-center py-12">
-          <p className="text-gray-600 dark:text-gray-400 text-base md:text-lg">
-            {categoryId ? 'No products found in this category.' : 'No products available.'}
-          </p>
+      {/* Filters and Controls */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.1 }}
+        className="card-solid p-4 md:p-6 space-y-4"
+      >
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          {/* Search */}
+          <div className="flex-1 max-w-md">
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Search products..."
+                className="input pl-10"
+              />
+              <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-slate-400" />
+            </div>
+          </div>
+
+          {/* Controls */}
+          <div className="flex items-center space-x-3">
+            {/* Sort */}
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="input py-2 px-3 text-sm min-w-0 w-auto"
+            >
+              <option value="newest">Newest First</option>
+              <option value="oldest">Oldest First</option>
+              <option value="price-low">Price: Low to High</option>
+              <option value="price-high">Price: High to Low</option>
+              <option value="name">Name A-Z</option>
+            </select>
+
+            {/* View Mode */}
+            <div className="flex bg-slate-100 dark:bg-slate-700 rounded-xl p-1">
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => setViewMode('grid')}
+                className={`p-2 rounded-lg transition-all duration-300 ${
+                  viewMode === 'grid'
+                    ? 'bg-white dark:bg-slate-600 shadow-sm'
+                    : 'text-slate-500 dark:text-slate-400'
+                }`}
+              >
+                <Squares2X2Icon className="h-5 w-5" />
+              </motion.button>
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => setViewMode('list')}
+                className={`p-2 rounded-lg transition-all duration-300 ${
+                  viewMode === 'list'
+                    ? 'bg-white dark:bg-slate-600 shadow-sm'
+                    : 'text-slate-500 dark:text-slate-400'
+                }`}
+              >
+                <ListBulletIcon className="h-5 w-5" />
+              </motion.button>
+            </div>
+
+            {/* Filters Toggle */}
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => setShowFilters(!showFilters)}
+              className={`btn ${showFilters ? 'btn-primary' : 'btn-outline'} !p-2`}
+            >
+              <AdjustmentsHorizontalIcon className="h-5 w-5" />
+            </motion.button>
+          </div>
         </div>
-      ) : (
-        <div className="products-section">
-          <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
-            {currentProducts.map((product) => (
-              <div key={product.id} className="group bg-surface dark:bg-surface-dark rounded-xl overflow-hidden shadow hover:shadow-lg transition-all duration-300 p-3 md:p-4">
-                <Link
-                  to={`/product/${product.id}`}
-                  className="block"
-                >
-                  <div className="relative aspect-[4/5] mb-3 rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-800">
-                    <img
-                      src={product.image}
-                      alt={product.name}
-                      className="object-cover w-full h-full transition-all duration-500 group-hover:scale-110"
-                      loading="lazy"
-                    />
-                    <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-all duration-300" />
-                  </div>
-                  <div className="space-y-2">
-                    <div className="min-h-[2.5rem]">
-                      <h2 className="text-sm md:text-base font-medium text-text dark:text-text-dark line-clamp-2 group-hover:text-primary transition-colors duration-300">
-                        {product.name}
-                      </h2>
-                    </div>
-                    <div className="flex items-end justify-between">
-                      <span className="block text-primary font-bold text-base md:text-lg">
-                        TZS {parseFloat(product.price).toLocaleString()}
-                      </span>
-                      {product.oldPrice && (
-                        <span className="text-xs text-gray-500 dark:text-gray-400 line-through">
-                          TZS {parseFloat(product.oldPrice).toLocaleString()}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </Link>
-                <Link to={`/product/${product.id}`} className="w-full block mt-3">
-                  <div className="w-full bg-primary text-white px-4 py-2.5 rounded-lg hover:bg-primary-dark active:bg-primary transition-all duration-300 text-sm font-medium flex items-center justify-center space-x-2 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-opacity-50">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12h.01M12 12h.01M9 12h.01" />
-                    </svg>
-                    <span>View a product</span>
-                  </div>
-                </Link>
+
+        {/* Advanced Filters */}
+        {showFilters && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="border-t border-slate-200 dark:border-slate-700 pt-4 space-y-4"
+          >
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Price Range */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                  Price Range
+                </label>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="number"
+                    placeholder="Min"
+                    className="input text-sm"
+                    value={priceRange[0]}
+                    onChange={(e) => setPriceRange([parseInt(e.target.value) || 0, priceRange[1]])}
+                  />
+                  <span className="text-slate-400">-</span>
+                  <input
+                    type="number"
+                    placeholder="Max"
+                    className="input text-sm"
+                    value={priceRange[1]}
+                    onChange={(e) => setPriceRange([priceRange[0], parseInt(e.target.value) || 1000000])}
+                  />
+                </div>
               </div>
+
+              {/* Category Filter */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                  Category
+                </label>
+                <select className="input text-sm">
+                  <option value="">All Categories</option>
+                  {categories.map(category => (
+                    <option key={category.id} value={category.id}>
+                      {category.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Stock Filter */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                  Availability
+                </label>
+                <select className="input text-sm">
+                  <option value="">All Products</option>
+                  <option value="in-stock">In Stock</option>
+                  <option value="out-of-stock">Out of Stock</option>
+                </select>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </motion.div>
+
+      {/* Products Grid/List */}
+      {products.length === 0 ? (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="text-center py-16 card-solid"
+        >
+          <div className="w-24 h-24 bg-slate-100 dark:bg-slate-700 rounded-full flex items-center justify-center mx-auto mb-6">
+            <span className="text-slate-400 text-4xl">🔍</span>
+          </div>
+          <h3 className="text-xl font-semibold text-slate-800 dark:text-slate-200 mb-2">
+            No products found
+          </h3>
+          <p className="text-slate-600 dark:text-slate-400 mb-6">
+            {categoryId ? 'No products found in this category.' : 'Try adjusting your search or filters.'}
+          </p>
+          <Link to="/products">
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              className="btn btn-primary"
+            >
+              Browse All Products
+            </motion.button>
+          </Link>
+        </motion.div>
+      ) : (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.2 }}
+          className="space-y-6"
+        >
+          {/* Products Count */}
+          <div className="flex items-center justify-between">
+            <p className="text-slate-600 dark:text-slate-400">
+              Showing {startIndex + 1}-{Math.min(endIndex, products.length)} of {products.length} products
+            </p>
+          </div>
+
+          {/* Products Grid */}
+          <div className={`grid gap-4 md:gap-6 ${
+            viewMode === 'grid' 
+              ? 'grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5' 
+              : 'grid-cols-1'
+          }`}>
+            {currentProducts.map((product, index) => (
+              <ProductCard
+                key={product.id}
+                product={product}
+                index={index}
+                viewMode={viewMode}
+              />
             ))}
           </div>
 
-          {/* Pagination Controls */}
+          {/* Pagination */}
           {totalPages > 1 && (
-            <div className="flex justify-center items-center space-x-1 mt-8">
-              {isMobile ? (
-                // Mobile pagination - Simple Next/Previous
-                <div className="flex items-center justify-between w-full max-w-xs px-2">
-                  <button
-                    onClick={() => handlePageChange(currentPage - 1)}
-                    disabled={currentPage === 1}
-                    className={`flex items-center px-3 py-2 rounded-md text-sm ${
-                      currentPage === 1
-                        ? 'text-gray-400 dark:text-gray-600 cursor-not-allowed'
-                        : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
-                    }`}
-                  >
-                    <ChevronLeftIcon className="h-4 w-4 mr-1" />
-                    Prev
-                  </button>
-                  <span className="text-gray-600 dark:text-gray-400 text-sm">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex justify-center"
+            >
+              <div className="flex items-center space-x-2 card-solid p-2 rounded-2xl">
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => handlePageChange(currentPage - 1)}
+                  disabled={currentPage === 1}
+                  className={`px-4 py-2 rounded-xl font-medium transition-all duration-300 ${
+                    currentPage === 1
+                      ? 'text-slate-400 cursor-not-allowed'
+                      : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  Previous
+                </motion.button>
+                
+                {isMobile ? (
+                  <span className="px-4 py-2 bg-gradient-primary text-white rounded-xl font-semibold">
                     {currentPage} / {totalPages}
                   </span>
-                  <button
-                    onClick={() => handlePageChange(currentPage + 1)}
-                    disabled={currentPage === totalPages}
-                    className={`flex items-center px-3 py-2 rounded-md text-sm ${
-                      currentPage === totalPages
-                        ? 'text-gray-400 dark:text-gray-600 cursor-not-allowed'
-                        : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
-                    }`}
-                  >
-                    Next
-                    <ChevronRightIcon className="h-4 w-4 ml-1" />
-                  </button>
-                </div>
-              ) : (
-                // Desktop pagination - Full controls
-                <>
-                  <button
-                    onClick={() => handlePageChange(currentPage - 1)}
-                    disabled={currentPage === 1}
-                    className={`p-2 rounded-md ${
-                      currentPage === 1
-                        ? 'text-gray-400 dark:text-gray-600 cursor-not-allowed'
-                        : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
-                    }`}
-                  >
-                    <ChevronLeftIcon className="h-5 w-5" />
-                  </button>
-                  
-                  {[...Array(totalPages)].map((_, index) => (
-                    <button
-                      key={index + 1}
-                      onClick={() => handlePageChange(index + 1)}
-                      className={`px-4 py-2 rounded-md mx-1 ${
-                        currentPage === index + 1
-                          ? 'bg-primary text-white'
-                          : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
-                      }`}
-                    >
-                      {index + 1}
-                    </button>
-                  ))}
-                  
-                  <button
-                    onClick={() => handlePageChange(currentPage + 1)}
-                    disabled={currentPage === totalPages}
-                    className={`p-2 rounded-md ${
-                      currentPage === totalPages
-                        ? 'text-gray-400 dark:text-gray-600 cursor-not-allowed'
-                        : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
-                    }`}
-                  >
-                    <ChevronRightIcon className="h-5 w-5" />
-                  </button>
-                </>
-              )}
-            </div>
+                ) : (
+                  <div className="flex space-x-1">
+                    {[...Array(totalPages)].map((_, index) => (
+                      <motion.button
+                        key={index + 1}
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => handlePageChange(index + 1)}
+                        className={`px-4 py-2 rounded-xl font-medium transition-all duration-300 ${
+                          currentPage === index + 1
+                            ? 'bg-gradient-primary text-white shadow-lg'
+                            : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+                        }`}
+                      >
+                        {index + 1}
+                      </motion.button>
+                    ))}
+                  </div>
+                )}
+                
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => handlePageChange(currentPage + 1)}
+                  disabled={currentPage === totalPages}
+                  className={`px-4 py-2 rounded-xl font-medium transition-all duration-300 ${
+                    currentPage === totalPages
+                      ? 'text-slate-400 cursor-not-allowed'
+                      : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  Next
+                </motion.button>
+              </div>
+            </motion.div>
           )}
-        </div>
+        </motion.div>
       )}
     </div>
   );

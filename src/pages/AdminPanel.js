@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { collection, getDocs, query, orderBy, limit, where, getCountFromServer } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy, limit } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import analyticsService from '../services/analyticsService';
 import {
@@ -36,120 +36,79 @@ const AdminPanel = () => {
   });
   const [analytics, setAnalytics] = useState(null);
   const [realTimeMetrics, setRealTimeMetrics] = useState(null);
-  const [statsError, setStatsError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [timeRange, setTimeRange] = useState('30d');
   const [recentActivities, setRecentActivities] = useState([]);
-  const intervalRef = useRef(null);
-  const isFetchingRef = useRef(false);
-  const lastRefreshRef = useRef(0);
-  const REFRESH_COOLDOWN = 5000; // ms
-  const analyticsLoadedRef = useRef(false);
-  const analyticsTimeoutRef = useRef(null);
-  // Stats aggregation retry helpers to handle quota/exhaustion gracefully
-  const statsRetryRef = useRef({ count: 0, delay: 2000 });
-  const statsRetryTimeoutRef = useRef(null);
-  // Cache stats for short time to avoid repeating aggregation calls
-  const STATS_TTL_MS = 5 * 60 * 1000; // 5 minutes
-  const statsCacheRef = useRef({ ts: 0, data: null });
+
+  useEffect(() => {
+    fetchAllData();
+    // Set up real-time metrics polling
+    const interval = setInterval(fetchRealTimeMetrics, 30000); // Update every 30 seconds
+    return () => clearInterval(interval);
+  }, [timeRange, fetchAllData, fetchRealTimeMetrics]);
+
+  const fetchAllData = useCallback(async () => {
+    try {
+      setLoading(true);
+      await Promise.all([
+        fetchStats(),
+        fetchAnalytics(),
+        fetchRealTimeMetrics(),
+        fetchRecentActivities()
+      ]);
+    } catch (error) {
+      console.error('Error fetching dashboard data:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [fetchStats, fetchAnalytics, fetchRealTimeMetrics, fetchRecentActivities]);
 
   const fetchStats = useCallback(async () => {
-    setStatsError(null);
-    const MAX_RETRIES = 3;
-    // Serve from cache if not stale
     try {
-      const cached = statsCacheRef.current.data || JSON.parse(localStorage.getItem('admin_stats_cache') || 'null');
-      const cachedTs = statsCacheRef.current.ts || (cached && cached._ts) || 0;
-      if (cached && (Date.now() - cachedTs) < STATS_TTL_MS) {
-        setStats(prev => ({ ...prev, ...cached }));
-        return;
-      }
-    } catch (e) {
-      // ignore cache parse errors
-    }
-    try {
-      // First: quick totals (these are the minimal needed values)
-      const usersCountSnap = await getCountFromServer(query(collection(db, 'users')));
-      const productsCountSnap = await getCountFromServer(query(collection(db, 'products')));
-      const categoriesCountSnap = await getCountFromServer(query(collection(db, 'categories')));
-      // active users (isActive flag)
-      let activeUsersCount = 0;
-      try {
-        const activeSnap = await getCountFromServer(query(collection(db, 'users'), where('isActive', '==', true)));
-        activeUsersCount = activeSnap.data().count;
-      } catch (err) {
-        console.warn('active users aggregation failed:', err);
-      }
+      // Fetch users
+      const usersSnapshot = await getDocs(collection(db, 'users'));
+      const users = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-      // set quick totals immediately
-      const quick = {
-        totalUsers: usersCountSnap.data().count || 0,
-        totalProducts: productsCountSnap.data().count || 0,
-        totalCategories: categoriesCountSnap.data().count || 0,
-        activeUsers: activeUsersCount
-      };
-      setStats(prev => ({ ...prev, ...quick }));
+      // Fetch products
+      const productsSnapshot = await getDocs(collection(db, 'products'));
+      const products = productsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-      // cache quick results (in-memory + localStorage)
-      try {
-        statsCacheRef.current = { ts: Date.now(), data: quick };
-        localStorage.setItem('admin_stats_cache', JSON.stringify({ ...quick, _ts: statsCacheRef.current.ts }));
-      } catch (e) { /* ignore storage errors */ }
+      // Fetch categories
+      const categoriesSnapshot = await getDocs(collection(db, 'categories'));
+      const categories = categoriesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-      // Fetch recent counts in background (non-blocking) — optional and less frequent
-      (async () => {
-        const oneWeekAgo = new Date();
-        oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-        let recentUsersCount = 0;
-        let recentProductsCount = 0;
-        try {
-          const recentUsersSnap = await getCountFromServer(query(collection(db, 'users'), where('createdAt', '>=', oneWeekAgo)));
-          recentUsersCount = recentUsersSnap.data().count;
-        } catch (err) {
-          console.warn('recentUsers count aggregation failed:', err);
-        }
-        try {
-          const recentProductsSnap = await getCountFromServer(query(collection(db, 'products'), where('createdAt', '>=', oneWeekAgo)));
-          recentProductsCount = recentProductsSnap.data().count;
-        } catch (err) {
-          console.warn('recentProducts count aggregation failed:', err);
-        }
-        // update only the recent fields
-        setStats(prev => ({ ...prev, recentUsers: recentUsersCount, recentProducts: recentProductsCount }));
-        try {
-          const cached = statsCacheRef.current.data || {};
-          const updated = { ...cached, recentUsers: recentUsersCount, recentProducts: recentProductsCount };
-          statsCacheRef.current = { ts: Date.now(), data: updated };
-          localStorage.setItem('admin_stats_cache', JSON.stringify({ ...updated, _ts: statsCacheRef.current.ts }));
-        } catch (e) {}
-      })();
-     
-      // reset retry state if success
-      statsRetryRef.current.count = 0;
-      statsRetryRef.current.delay = 2000;
-      if (statsRetryTimeoutRef.current) { clearTimeout(statsRetryTimeoutRef.current); statsRetryTimeoutRef.current = null; }
+      // Calculate recent stats (last 7 days)
+      const oneWeekAgo = new Date();
+      oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+
+      const recentUsers = users.filter(user =>
+        user.createdAt && new Date(user.createdAt) >= oneWeekAgo
+      ).length;
+
+      const recentProducts = products.filter(product =>
+        product.createdAt && new Date(product.createdAt) >= oneWeekAgo
+      ).length;
+
+      // Calculate additional metrics
+      const activeUsers = users.filter(user => user.isActive !== false).length;
+      const totalRevenue = products.reduce((sum, product) => sum + (parseFloat(product.price) || 0), 0);
+
+      setStats({
+        totalUsers: users.length,
+        totalProducts: products.length,
+        totalOrders: 0, // Implement when orders are added
+        totalCategories: categories.length,
+        recentUsers,
+        recentProducts,
+        activeUsers,
+        totalRevenue,
+        pendingOrders: 0,
+        completedOrders: 0
+      });
     } catch (error) {
-      console.error('Error fetching stats (aggregation failed):', error);
-      setStatsError(error?.message || String(error));
-      const isQuotaError = String(error?.message || '').toLowerCase().includes('quota') || error?.code === 'resource-exhausted';
-
-      if (isQuotaError && statsRetryRef.current.count < MAX_RETRIES) {
-        // exponential backoff retry for quota errors
-        const delay = statsRetryRef.current.delay || 2000;
-        statsRetryRef.current.count += 1;
-        statsRetryRef.current.delay = Math.min(delay * 2, 60000);
-        console.warn(`Quota exceeded. Will retry stats aggregation in ${delay}ms (attempt ${statsRetryRef.current.count})`);
-        statsRetryTimeoutRef.current = setTimeout(() => fetchStats(), delay);
-        return;
-      }
-
-      // Don't perform full collection scans as a fallback when quota is exceeded — that worsens the problem.
-      // Instead, preserve existing stats or show zeros and surface guidance to the user.
-      console.warn('Aggregation failed and retries exhausted or not allowed. Skipping heavy fallback to avoid further quota usage.');
-      // Optionally set a minimal fallback
-      setStats(prev => ({ ...prev }));
+      console.error('Error fetching stats:', error);
     }
-  }, [STATS_TTL_MS]);
+  }, []);
 
   const fetchAnalytics = useCallback(async () => {
     try {
@@ -187,69 +146,6 @@ const AdminPanel = () => {
       console.error('Error fetching recent activities:', error);
     }
   }, []);
-
-  // Fetch all dashboard data (function declaration)
-  const fetchAllData = useCallback(async () => {
-    if (isFetchingRef.current) return; // prevent overlapping
-    isFetchingRef.current = true;
-    try {
-      setLoading(true);
-      // Avoid fetching heavy analytics on initial load to speed up initial render.
-      await Promise.all([
-        fetchStats(),
-        fetchRealTimeMetrics(),
-        fetchRecentActivities()
-      ]);
-
-      // Schedule analytics fetch after a short delay if tab is visible and analytics not loaded yet
-      if (!analyticsLoadedRef.current && document.visibilityState === 'visible') {
-        if (analyticsTimeoutRef.current) clearTimeout(analyticsTimeoutRef.current);
-        analyticsTimeoutRef.current = setTimeout(() => {
-          fetchAnalytics().catch(err => console.error(err));
-        }, 2000); // 2s delay
-      }
-    } catch (error) {
-      console.error('Error fetching dashboard data:', error);
-    } finally {
-      setLoading(false);
-      isFetchingRef.current = false;
-    }
-  }, [fetchStats, fetchRealTimeMetrics, fetchRecentActivities, fetchAnalytics]);
-
-  useEffect(() => {
-    // initial load
-    fetchAllData();
-
-    // helper to start polling only when tab visible
-    const startPolling = () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      intervalRef.current = setInterval(() => {
-        if (document.visibilityState === 'visible') {
-          // fetch only lightweight real-time metrics on interval
-          fetchRealTimeMetrics().catch(err => console.error(err));
-        }
-      }, 30000);
-    };
-
-    // start polling
-    startPolling();
-
-    const handleVisibility = () => {
-      if (document.visibilityState === 'hidden') {
-        if (intervalRef.current) clearInterval(intervalRef.current);
-      } else {
-        startPolling();
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibility);
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      if (analyticsTimeoutRef.current) clearTimeout(analyticsTimeoutRef.current);
-      if (statsRetryTimeoutRef.current) clearTimeout(statsRetryTimeoutRef.current);
-      document.removeEventListener('visibilitychange', handleVisibility);
-    };
-  }, [fetchAllData, fetchRealTimeMetrics]);
 
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-TZ', {
@@ -404,11 +300,6 @@ const AdminPanel = () => {
 
   return (
     <div className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6 lg:px-8 py-4 md:py-6 lg:py-8">
-      {statsError && (
-        <div className="mb-4 p-3 rounded-md bg-red-50 border border-red-200 text-red-700">
-          <strong>Stats error:</strong> {statsError} (check console)
-        </div>
-      )}
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 md:mb-8 gap-4">
         <div>
@@ -428,14 +319,8 @@ const AdminPanel = () => {
             <option value="90d">Last 90 days</option>
           </select>
           <button
-            onClick={() => {
-              const now = Date.now();
-              if (now - lastRefreshRef.current < REFRESH_COOLDOWN) return; // cooldown
-              lastRefreshRef.current = now;
-              fetchAllData();
-            }}
-            disabled={loading}
-            className="inline-flex items-center px-3 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary hover:bg-secondary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary touch-manipulation disabled:opacity-60 disabled:cursor-not-allowed"
+            onClick={fetchAllData}
+            className="inline-flex items-center px-3 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary hover:bg-secondary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary touch-manipulation"
           >
             <ArrowPathIcon className="h-4 w-4 mr-2" />
             Refresh
