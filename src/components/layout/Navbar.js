@@ -70,7 +70,7 @@ const Navbar = ({ onMenuClick }) => {
                 <div className="relative">
                   <div className="w-10 h-10 md:w-12 md:h-12 rounded-2xl overflow-hidden shadow-lg group-hover:shadow-xl transition-all duration-300 group-hover:scale-105">
                     <img
-                      src="https://i.ibb.co/gFVc9yYP/Black-White-Modern-Letter-A-Logo-Design.png"
+                      src="https://i.ibb.co/Xxdy15Lh/Orange-and-Black-Simple-Online-Shop-Logo.png"
                       alt="AntenkaYume Shop"
                       className="w-full h-full object-cover"
                       onError={(e) => {
