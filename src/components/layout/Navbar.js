@@ -71,7 +71,7 @@ const Navbar = ({ onMenuClick }) => {
                   <div className="w-10 h-10 md:w-12 md:h-12 rounded-2xl overflow-hidden shadow-lg group-hover:shadow-xl transition-all duration-300 group-hover:scale-105">
                     <img
                       src="https://i.ibb.co/gFVc9yYP/Black-White-Modern-Letter-A-Logo-Design.png"
-                      alt="AnA Group Logo"
+                      alt="AntenkaYume Shop"
                       className="w-full h-full object-cover"
                       onError={(e) => {
                         e.target.style.display = 'none';
@@ -86,7 +86,7 @@ const Navbar = ({ onMenuClick }) => {
                 </div>
                 <div className="hidden sm:flex flex-col">
                   <span className="text-xl md:text-2xl font-bold bg-gradient-to-r from-primary to-primary-600 bg-clip-text text-transparent leading-tight">
-                    AnA Group
+                    AntenkaYume Shop
                   </span>
                   <span className="text-xs md:text-sm text-text-tertiary dark:text-text-dark-tertiary font-medium leading-tight">
                     Premium Supplies

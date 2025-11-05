@@ -74,7 +74,7 @@ class AIService {
       categoryMap[cat.id] = cat.name;
     });
 
-    let context = `\n\nAVAILABLE PRODUCTS AT ANA GROUP SUPPLIES:\n\n`;
+    let context = `\n\nAVAILABLE PRODUCTS AT ANTENKAYUME SHOP:\n\n`;
     
     // Group products by category
     const productsByCategory = {};
@@ -121,7 +121,7 @@ class AIService {
       }
 
       // Enhanced system prompt with product awareness
-      const systemPrompt = `You are an intelligent customer service assistant for AnA Group Supplies, a premium fashion retailer. You have access to real-time product inventory and comprehensive knowledge about all available items.
+      const systemPrompt = `You are an intelligent customer service assistant for AntenkaYume shop, a premium fashion retailer. You have access to real-time product inventory and comprehensive knowledge about all available items.
 
 KEY RESPONSIBILITIES:
 1. Provide detailed product recommendations based on customer preferences
