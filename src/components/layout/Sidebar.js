@@ -80,7 +80,7 @@ const Sidebar = ({ isOpen, onClose }) => {
               <span className="text-lg font-bold text-white">A</span>
             </div>
             <div>
-              <h2 className="text-lg font-bold text-text-primary dark:text-text-dark-primary">AnA Group</h2>
+              <h2 className="text-lg font-bold text-text-primary dark:text-text-dark-primary">AntenkaYume Shop</h2>
               <p className="text-xs text-text-tertiary dark:text-text-dark-tertiary">Premium Supplies</p>
             </div>
           </div>
@@ -232,7 +232,7 @@ const Sidebar = ({ isOpen, onClose }) => {
         {/* Footer */}
         <div className="p-6 border-t border-border/20 dark:border-border-dark/20 bg-background-secondary/30 dark:bg-background-dark-secondary/30">
           <p className="text-xs text-text-tertiary dark:text-text-dark-tertiary text-center">
-            © 2024 AnA Group Supplies
+            © 2024 AntenkaYume Shop
           </p>
           <p className="text-xs text-text-tertiary dark:text-text-dark-tertiary text-center mt-1">
             Premium Quality Products

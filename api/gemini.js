@@ -32,7 +32,7 @@ export default async function handler(req, res) {
 
   try {
     // Use the fashion assistant persona in the API call
-    const fullPrompt = `You are a helpful fashion assistant for  AnA Group Supplies. Provide fashion advice and recommendations based on the user's query. Keep your responses concise and relevant to fashion.
+    const fullPrompt = `You are a helpful fashion assistant for  AntenkaYume Shop. Provide fashion advice and recommendations based on the user's query. Keep your responses concise and relevant to fashion.
 
 User query: ${prompt}`;
 
