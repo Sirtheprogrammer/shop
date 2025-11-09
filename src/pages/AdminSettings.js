@@ -3,16 +3,31 @@ import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { toast } from 'react-toastify';
 import { ArrowLeftIcon, CheckIcon, PhoneIcon } from '@heroicons/react/24/outline';
+import { useSettings } from '../context/SettingsContext';
 
 const AdminSettings = () => {
+  const { settings: ctxSettings, loading: ctxLoading } = useSettings();
   const [settings, setSettings] = useState({
-    whatsappNumber: '255683568254',
-    businessName: 'AnA Group Supplies',
-    businessEmail: 'info@anagroupsupplies.co.tz',
-    supportPhone: '255683568254'
+    whatsappNumber: '',
+    businessName: '',
+    businessEmail: '',
+    supportPhone: ''
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+
+  // Sync local state from context when available
+  useEffect(() => {
+    if (!ctxLoading) {
+      setSettings(prev => ({
+        whatsappNumber: ctxSettings?.whatsappNumber || '255683568254',
+        businessName: ctxSettings?.businessName || 'AntenkaYume Shop',
+        businessEmail: ctxSettings?.businessEmail || 'antenkaofficial@gmail.com',
+        supportPhone: ctxSettings?.supportPhone || '255683568254'
+      }));
+      setLoading(false);
+    }
+  }, [ctxSettings, ctxLoading]);
 
   // Fetch current settings
   useEffect(() => {

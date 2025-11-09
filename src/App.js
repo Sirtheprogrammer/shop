@@ -4,6 +4,7 @@ import { useState } from 'react';
 import 'react-toastify/dist/ReactToastify.css';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
+import { SettingsProvider } from './context/SettingsContext';
 
 // Layout Components
 import Navbar from './components/layout/Navbar';
@@ -40,7 +41,7 @@ const AppContent = ({ isSidebarOpen, setIsSidebarOpen }) => {
         <div className="text-center">
           <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-blue-600 mx-auto mb-4"></div>
           <h2 className="text-xl font-semibold text-gray-700 mb-2">
-            {user ? 'Setting up your account...' : 'Loading services..'}
+            {user ? 'Setting up your account...' : 'Loading App'}
           </h2>
           <p className="text-gray-500">
             {user ? 'Please wait while we load your profile...' : 'Please wait while we set up your experience...'}
@@ -105,7 +106,9 @@ const App = () => {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <AppContent isSidebarOpen={isSidebarOpen} setIsSidebarOpen={setIsSidebarOpen} />
+        <SettingsProvider>
+          <AppContent isSidebarOpen={isSidebarOpen} setIsSidebarOpen={setIsSidebarOpen} />
+        </SettingsProvider>
       </AuthProvider>
     </ThemeProvider>
   );

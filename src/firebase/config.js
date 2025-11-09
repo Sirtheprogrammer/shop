@@ -4,6 +4,7 @@ import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
 // Firebase configuration
+
 const firebaseConfig = {
   apiKey: "AIzaSyCeEfQ3_XCjN3YOdWUhFBLvyXyfUrDTVtk",
   authDomain: "anagroupsupplies.firebaseapp.com",

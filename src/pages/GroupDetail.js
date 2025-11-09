@@ -84,6 +84,14 @@ const GroupDetail = () => {
     }
 
     try {
+      // First ensure the cart document exists
+      const cartRef = doc(db, 'carts', user.uid);
+      await setDoc(cartRef, {
+        updatedAt: new Date().toISOString(),
+        items: [] // This will be ignored by Firestore but ensures document exists
+      }, { merge: true });
+
+      // Then add the item
       const cartItemRef = doc(db, `carts/${user.uid}/items`, selected.id);
 
       await setDoc(cartItemRef, {
@@ -125,6 +133,13 @@ const GroupDetail = () => {
     }
 
     try {
+      // First ensure the wishlist document exists
+      const wishlistRef = doc(db, 'wishlists', user.uid);
+      await setDoc(wishlistRef, {
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+
+      // Then add the item
       const wishlistItemRef = doc(db, `wishlists/${user.uid}/items`, selected.id);
 
       await setDoc(wishlistItemRef, {
