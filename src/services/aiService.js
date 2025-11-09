@@ -74,7 +74,7 @@ class AIService {
       categoryMap[cat.id] = cat.name;
     });
 
-    let context = `\n\nAVAILABLE PRODUCTS AT ANTENKAYUME SHOP:\n\n`;
+    let context = `\n\nAVAILABLE PRODUCTS AT ANTEKAYUMR SHOP:\n\n`;
     
     // Group products by category
     const productsByCategory = {};
